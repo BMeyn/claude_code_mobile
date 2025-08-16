@@ -1,0 +1,62 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "containerAppName": {
+      "type": "string",
+      "defaultValue": "claude-container-app",
+      "metadata": {
+        "description": "The name of the Azure Container App."
+      }
+    },
+    "containerImage": {
+      "type": "string",
+      "defaultValue": "your-docker-image:latest",
+      "metadata": {
+        "description": "The Docker image to be used for the container app."
+      }
+    },
+    "environmentName": {
+      "type": "string",
+      "defaultValue": "claude-env",
+      "metadata": {
+        "description": "The name of the Azure Container App environment."
+      }
+    },
+    "cpu": {
+      "type": "int",
+      "defaultValue": 0.5,
+      "metadata": {
+        "description": "The amount of CPU to allocate to the container app."
+      }
+    },
+    "memory": {
+      "type": "string",
+      "defaultValue": "1Gi",
+      "metadata": {
+        "description": "The amount of memory to allocate to the container app."
+      }
+    },
+    "ingressEnabled": {
+      "type": "bool",
+      "defaultValue": true,
+      "metadata": {
+        "description": "Enable ingress for the container app."
+      }
+    },
+    "ingressPort": {
+      "type": "int",
+      "defaultValue": 80,
+      "metadata": {
+        "description": "The port for ingress traffic."
+      }
+    },
+    "authEnabled": {
+      "type": "bool",
+      "defaultValue": true,
+      "metadata": {
+        "description": "Enable authentication for the container app."
+      }
+    }
+  }
+}

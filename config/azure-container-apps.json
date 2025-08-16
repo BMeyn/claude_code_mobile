@@ -1,0 +1,48 @@
+{
+  "containerApps": {
+    "name": "claude-container-app",
+    "location": "East US",
+    "environment": "claude-env",
+    "image": {
+      "repository": "yourregistry/claude-backend",
+      "tag": "latest"
+    },
+    "ingress": {
+      "external": true,
+      "targetPort": 80,
+      "transport": "http"
+    },
+    "scale": {
+      "minReplicas": 1,
+      "maxReplicas": 5,
+      "rules": [
+        {
+          "name": "http-rule",
+          "http": {
+            "concurrentRequests": 20
+          }
+        }
+      ]
+    },
+    "secrets": [
+      {
+        "name": "db-connection-string",
+        "value": "your_db_connection_string"
+      },
+      {
+        "name": "api-key",
+        "value": "your_api_key"
+      }
+    ],
+    "env": [
+      {
+        "name": "NODE_ENV",
+        "value": "production"
+      },
+      {
+        "name": "PORT",
+        "value": "80"
+      }
+    ]
+  }
+}

@@ -1,0 +1,50 @@
+name: Deploy Backend
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v2
+        with:
+          node-version: '16'
+
+      - name: Install dependencies
+        run: npm install
+        working-directory: ./backend
+
+      - name: Build the backend
+        run: npm run build
+        working-directory: ./backend
+
+      - name: Build Docker image
+        run: |
+          docker build -t my-backend-image .
+        working-directory: ./backend
+
+      - name: Log in to Azure Container Registry
+        run: |
+          echo "${{ secrets.AZURE_PASSWORD }}" | docker login myregistry.azurecr.io --username ${{ secrets.AZURE_USERNAME }} --password-stdin
+
+      - name: Push Docker image to Azure Container Registry
+        run: |
+          docker tag my-backend-image myregistry.azurecr.io/my-backend-image:latest
+          docker push myregistry.azurecr.io/my-backend-image:latest
+
+      - name: Deploy to Azure Container Apps
+        run: |
+          az containerapp update --name my-container-app --resource-group my-resource-group --image myregistry.azurecr.io/my-backend-image:latest
+        env:
+          AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}

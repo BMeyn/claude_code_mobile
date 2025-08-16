@@ -1,0 +1,13 @@
+{
+  "issuer": "https://your-issuer-url.com",
+  "client_id": "your-client-id",
+  "client_secret": "your-client-secret",
+  "redirect_uri": "your-redirect-uri",
+  "scope": "openid profile email",
+  "response_type": "code",
+  "authorization_endpoint": "https://your-issuer-url.com/authorize",
+  "token_endpoint": "https://your-issuer-url.com/token",
+  "userinfo_endpoint": "https://your-issuer-url.com/userinfo",
+  "end_session_endpoint": "https://your-issuer-url.com/logout",
+  "jwks_uri": "https://your-issuer-url.com/.well-known/jwks.json"
+}
