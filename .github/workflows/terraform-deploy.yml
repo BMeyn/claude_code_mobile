@@ -1,0 +1,96 @@
+name: Terraform Deploy Azure Infra
+
+on:
+  workflow_dispatch:
+    inputs:
+      resource_group_name:
+        description: Azure Resource Group name
+        required: true
+        default: claude-code-rg
+      location:
+        description: Azure location
+        required: true
+        default: westeurope
+      container_app_name:
+        description: Container App name
+        required: true
+        default: claude-container-app
+      container_image:
+        description: Full container image (e.g., myacr.azurecr.io/backend:tag)
+        required: true
+      target_port:
+        description: Container port
+        required: true
+        default: "3000"
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      TF_IN_AUTOMATION: true
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.7.5
+
+      - name: Terraform Init
+        working-directory: infra/azure/terraform
+        run: terraform init
+
+      - name: Terraform Plan
+        id: plan
+        working-directory: infra/azure/terraform
+        run: |
+          terraform plan \
+            -var="resource_group_name=${{ inputs.resource_group_name }}" \
+            -var="location=${{ inputs.location }}" \
+            -var="container_app_name=${{ inputs.container_app_name }}" \
+            -var="container_image=${{ inputs.container_image }}" \
+            -var="target_port=${{ inputs.target_port }}" \
+            -out=tfplan
+
+      - name: Terraform Apply
+        working-directory: infra/azure/terraform
+        run: terraform apply -auto-approve tfplan
+
+      - name: Get outputs
+        id: tfout
+        working-directory: infra/azure/terraform
+        run: |
+          FQDN=$(terraform output -raw container_app_fqdn)
+          ACR_SERVER=$(terraform output -raw acr_login_server)
+          echo "fqdn=$FQDN" >> $GITHUB_OUTPUT
+          echo "acr=$ACR_SERVER" >> $GITHUB_OUTPUT
+
+      - name: Smoke test /health
+        run: |
+          set -e
+          FQDN="${{ steps.tfout.outputs.fqdn }}"
+          echo "Probing https://$FQDN/health"
+          for i in {1..30}; do
+            STATUS=$(curl -sS -o /dev/null -w "%{http_code}" https://$FQDN/health || true)
+            if [ "$STATUS" = "200" ]; then
+              echo "Healthy"
+              exit 0
+            fi
+            echo "Attempt $i/30: status=$STATUS"
+            sleep 10
+          done
+          echo "App not healthy in time" >&2
+          exit 1

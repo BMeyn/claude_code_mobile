@@ -1,19 +1,16 @@
-FROM node:14
-
-# Set the working directory
-WORKDIR /usr/src/app
-
-# Copy package.json and package-lock.json
+FROM node:20-alpine AS build
+WORKDIR /app
 COPY package*.json ./
+RUN npm ci || npm install
+COPY tsconfig.json ./
+COPY src ./src
+RUN npm run build
 
-# Install dependencies
-RUN npm install
-
-# Copy the rest of the application code
-COPY ./src ./src
-
-# Expose the port the app runs on
+FROM node:20-alpine AS runtime
+WORKDIR /app
+ENV NODE_ENV=production
+COPY package*.json ./
+RUN npm ci --omit=dev || npm install --omit=dev
+COPY --from=build /app/dist ./dist
 EXPOSE 3000
-
-# Command to run the application
-CMD ["node", "src/server.ts"]
+CMD ["node", "dist/server.js"]

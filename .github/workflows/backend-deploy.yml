@@ -1,4 +1,4 @@
-name: Deploy Backend
+name: Build & Deploy Backend
 
 on:
   push:
@@ -6,17 +6,17 @@ on:
       - main
 
 jobs:
-  build:
+  build-and-deploy:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v2
+      - name: Checkout
+        uses: actions/checkout@v4
 
       - name: Set up Node.js
-        uses: actions/setup-node@v2
+        uses: actions/setup-node@v4
         with:
-          node-version: '16'
+          node-version: '20'
 
       - name: Install dependencies
         run: npm install
@@ -26,25 +26,57 @@ jobs:
         run: npm run build
         working-directory: ./backend
 
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
       - name: Build Docker image
         run: |
-          docker build -t my-backend-image .
+          IMAGE="${{ secrets.ACR_LOGIN_SERVER }}/claude-backend:${{ github.sha }}"
+          docker build -t "$IMAGE" .
+          echo "IMAGE=$IMAGE" >> $GITHUB_ENV
         working-directory: ./backend
 
-      - name: Log in to Azure Container Registry
+      - name: ACR login
         run: |
-          echo "${{ secrets.AZURE_PASSWORD }}" | docker login myregistry.azurecr.io --username ${{ secrets.AZURE_USERNAME }} --password-stdin
+          az acr login --name ${{ secrets.ACR_NAME }}
 
-      - name: Push Docker image to Azure Container Registry
+      - name: Push Docker image
         run: |
-          docker tag my-backend-image myregistry.azurecr.io/my-backend-image:latest
-          docker push myregistry.azurecr.io/my-backend-image:latest
+          docker push "$IMAGE"
 
       - name: Deploy to Azure Container Apps
         run: |
-          az containerapp update --name my-container-app --resource-group my-resource-group --image myregistry.azurecr.io/my-backend-image:latest
-        env:
-          AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
-          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
-          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          az containerapp update \
+            --name ${{ secrets.AZURE_CONTAINER_APP_NAME }} \
+            --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} \
+            --image "$IMAGE"
+
+      - name: Fetch app FQDN
+        id: fqdn
+        run: |
+          FQDN=$(az containerapp show \
+            --name ${{ secrets.AZURE_CONTAINER_APP_NAME }} \
+            --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} \
+            --query properties.configuration.ingress.fqdn -o tsv)
+          echo "fqdn=$FQDN" >> $GITHUB_OUTPUT
+
+      - name: Smoke test /health
+        run: |
+          set -e
+          FQDN="${{ steps.fqdn.outputs.fqdn }}"
+          echo "Probing https://$FQDN/health"
+          for i in {1..30}; do
+            STATUS=$(curl -sS -o /dev/null -w "%{http_code}" https://$FQDN/health || true)
+            if [ "$STATUS" = "200" ]; then
+              echo "Healthy"
+              exit 0
+            fi
+            echo "Attempt $i/30: status=$STATUS"
+            sleep 10
+          done
+          echo "App not healthy in time" >&2
+          exit 1
