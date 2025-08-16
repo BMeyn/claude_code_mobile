@@ -1,0 +1,80 @@
+name: Deploy Azure Infra (Bicep)
+
+on:
+  workflow_dispatch:
+    inputs:
+      appName:
+        description: Container App name
+        required: true
+        default: claude-container-app
+      environment:
+        description: Deployment environment tag (e.g., production, staging)
+        required: true
+        default: production
+      image:
+        description: Full image reference (e.g., myacr.azurecr.io/backend:latest)
+        required: true
+        default: youracr.azurecr.io/your-image:latest
+      location:
+        description: Azure location for the resource group (used if the RG is created)
+        required: true
+        default: westeurope
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  deploy:
+    name: Deploy Bicep to Azure
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Ensure resource group exists
+        run: |
+          az group create -n "${{ secrets.AZURE_RESOURCE_GROUP }}" -l "${{ inputs.location }}"
+
+      - id: deploy
+        name: Deploy Bicep to resource group
+        uses: azure/arm-deploy@v2
+        with:
+          scope: resourcegroup
+          subscriptionId: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          resourceGroupName: ${{ secrets.AZURE_RESOURCE_GROUP }}
+          template: infra/azure/main.bicep
+          deploymentName: claude-container-app-${{ github.run_number }}
+          parameters: >
+            appName=${{ inputs.appName }}
+            environment='${{ secrets.AZURE_ENVIRONMENT }}'
+            image='${{ inputs.image }}'
+
+      - name: Show outputs
+        run: |
+          echo "Container App FQDN: ${{ steps.deploy.outputs.containerAppUrl }}"
+      
+      - name: Wait for app readiness
+        run: |
+          set -e
+          FQDN="${{ steps.deploy.outputs.containerAppUrl }}"
+          echo "Waiting for $FQDN to become ready..."
+          for i in {1..30}; do
+            STATUS=$(curl -sS -o /dev/null -w "%{http_code}" https://$FQDN/health || true)
+            if [ "$STATUS" = "200" ]; then
+              echo "App is healthy"
+              exit 0
+            fi
+            echo "Attempt $i/30: status=$STATUS"
+            sleep 10
+          done
+          echo "App did not become healthy in time" >&2
+          exit 1
